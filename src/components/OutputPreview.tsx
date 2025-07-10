@@ -6,9 +6,16 @@ interface OutputPreviewProps {
   ratio: string;
   style: string;
   generatedImage?: string;
+  revisedPrompt?: string;
 }
 
-const OutputPreview: React.FC<OutputPreviewProps> = ({ prompt, ratio, style, generatedImage }) => {
+const OutputPreview: React.FC<OutputPreviewProps> = ({ 
+  prompt, 
+  ratio, 
+  style, 
+  generatedImage, 
+  revisedPrompt 
+}) => {
   const getRatioLabel = (ratio: string) => {
     const ratioMap: { [key: string]: string } = {
       '1:1': 'Square (1:1)',
@@ -47,12 +54,12 @@ const OutputPreview: React.FC<OutputPreviewProps> = ({ prompt, ratio, style, gen
             Generated Image
           </label>
         </div>
-        <div className="aspect-square bg-gray-50 rounded-xl border border-gray-200 flex items-center justify-center">
+        <div className="aspect-square bg-gray-50 rounded-xl border border-gray-200 flex items-center justify-center overflow-hidden">
           {generatedImage ? (
             <img
               src={generatedImage}
               alt="Generated"
-              className="w-full h-full object-cover rounded-xl"
+              className="w-full h-full object-cover"
             />
           ) : (
             <div className="text-center">

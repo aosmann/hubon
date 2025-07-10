@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
-import { Ratio as AspectRatio, Palette } from 'lucide-react';
+import { Ratio as AspectRatio, Palette, AlertCircle } from 'lucide-react';
 import TextInput from './TextInput';
 import Dropdown from './Dropdown';
 import SubmitButton from './SubmitButton';
 import OutputPreview from './OutputPreview';
+import { generateImage } from '../services/imageGeneration';
+import { saveGeneratedImage } from '../services/imageStorage';
 
 const GenerateView: React.FC = () => {
   const [prompt, setPrompt] = useState('');
@@ -11,6 +13,8 @@ const GenerateView: React.FC = () => {
   const [style, setStyle] = useState('Primary1');
   const [generatedImage, setGeneratedImage] = useState<string>('');
   const [isGenerating, setIsGenerating] = useState(false);
+  const [error, setError] = useState<string>('');
+  const [revisedPrompt, setRevisedPrompt] = useState<string>('');
 
   const ratioOptions = [
     { id: '1', label: 'Square (1:1)', value: '1:1' },
@@ -29,13 +33,36 @@ const GenerateView: React.FC = () => {
   const handleGenerate = async () => {
     if (!prompt.trim()) return;
     
+    setError('');
+    setGeneratedImage('');
+    setRevisedPrompt('');
     setIsGenerating(true);
     
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    try {
+      const result = await generateImage({
+        prompt,
+        ratio,
+        style,
+      });
+
+      if (result.success && result.imageUrl) {
+        setGeneratedImage(result.imageUrl);
+        if (result.revisedPrompt) {
+          setRevisedPrompt(result.revisedPrompt);
+        }
+        
+        // Save the generated image to the database
+        await saveGeneratedImage({
+          prompt: result.revisedPrompt || prompt,
+          imageUrl: result.imageUrl,
+        });
+      } else {
+        setError(result.details || result.error || 'Failed to generate image');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An unexpected error occurred');
+    }
     
-    // For demo purposes, using a placeholder image
-    setGeneratedImage('https://images.pexels.com/photos/1114690/pexels-photo-1114690.jpeg?auto=compress&cs=tinysrgb&w=800');
     setIsGenerating(false);
   };
 
@@ -83,6 +110,18 @@ const GenerateView: React.FC = () => {
                 disabled={!prompt.trim()}
                 loading={isGenerating}
               />
+              
+              {error && (
+                <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-xl">
+                  <div className="flex items-start space-x-3">
+                    <AlertCircle className="w-5 h-5 text-red-500 mt-0.5 flex-shrink-0" />
+                    <div>
+                      <h4 className="text-sm font-medium text-red-800 mb-1">Generation Failed</h4>
+                      <p className="text-sm text-red-700">{error}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -93,6 +132,7 @@ const GenerateView: React.FC = () => {
               ratio={ratio}
               style={style}
               generatedImage={generatedImage}
+              revisedPrompt={revisedPrompt}
             />
           </div>
         </div>

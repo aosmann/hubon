@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Home, Compass, Settings } from 'lucide-react';
 import Sidebar from './components/Sidebar';
 import GenerateView from './components/GenerateView';
+import HomeView from './components/HomeView';
 import PlaceholderView from './components/PlaceholderView';
 
 function App() {
@@ -10,13 +11,7 @@ function App() {
   const renderContent = () => {
     switch (activeTab) {
       case 'home':
-        return (
-          <PlaceholderView
-            title="Welcome to ImageGen"
-            description="Your AI-powered image generation platform"
-            icon={<Home className="w-8 h-8 text-gray-500" />}
-          />
-        );
+        return <HomeView />;
       case 'explore':
         return (
           <PlaceholderView
