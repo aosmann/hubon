@@ -40,6 +40,28 @@ export async function OPTIONS() {
   return new Response(null, { status: 200, headers: corsHeaders })
 }
 
+export async function GET() {
+  return json(
+    {
+      ok: true,
+      usage: "POST JSON to this endpoint to generate images with gpt-image-1.",
+      payload: {
+        prompt: "string (required) - passed verbatim, no server-side enhancement",
+        ratio: "optional: '1:1' | '16:9' | '9:16' | '4:3' | '3:4'",
+        size: "optional: 'WIDTHxHEIGHT' (overrides ratio mapping)",
+        referenceImageUrl: "optional: URL string to reference image",
+        editMaskUrl: "optional: URL string to mask (requires referenceImageUrl)",
+      },
+      example: {
+        prompt:
+          "Create a minimalist marketing visual with large headline, small body, small CTA zone. High contrast. Lots of whitespace. No gradients.",
+        ratio: "1:1",
+      },
+    },
+    200
+  )
+}
+
 export async function POST(req: Request) {
   try {
     const body = (await req.json()) as GenerateImagePayload
