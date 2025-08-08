@@ -3,15 +3,11 @@ export const runtime = "edge"
 type GenerateImagePayload = {
   prompt: string
   ratio?: "1:1" | "16:9" | "9:16" | "4:3" | "3:4"
-  size?: string // optional direct size like "1024x1024"
-  style?: string | null
+  size?: string
   referenceImageUrl?: string | null
   editMaskUrl?: string | null
 }
 
-/**
- * Map common social ratios to pixel sizes for gpt-image-1
- */
 function sizeFromRatio(ratio?: GenerateImagePayload["ratio"], fallback?: string) {
   if (fallback && /^\d+x\d+$/.test(fallback)) return fallback
   switch (ratio) {
@@ -41,94 +37,54 @@ export async function OPTIONS() {
 }
 
 export async function GET() {
-  return json(
-    {
-      ok: true,
-      usage: "POST JSON to this endpoint to generate images with gpt-image-1.",
-      payload: {
-        prompt: "string (required) - passed verbatim, no server-side enhancement",
-        ratio: "optional: '1:1' | '16:9' | '9:16' | '4:3' | '3:4'",
-        size: "optional: 'WIDTHxHEIGHT' (overrides ratio mapping)",
-        referenceImageUrl: "optional: URL string to reference image",
-        editMaskUrl: "optional: URL string to mask (requires referenceImageUrl)",
-      },
-      example: {
-        prompt:
-          "Create a minimalist marketing visual with large headline, small body, small CTA zone. High contrast. Lots of whitespace. No gradients.",
-        ratio: "1:1",
-      },
+  return json({
+    ok: true,
+    usage: "POST JSON to this endpoint to generate images with gpt-image-1.",
+    payload: {
+      prompt: "string (required)",
+      ratio: "optional: '1:1' | '16:9' | '9:16' | '4:3' | '3:4'",
+      size: "optional: 'WIDTHxHEIGHT'",
+      referenceImageUrl: "optional: URL",
+      editMaskUrl: "optional: URL (requires referenceImageUrl)",
     },
-    200
-  )
+  })
 }
 
 export async function POST(req: Request) {
   try {
     const body = (await req.json()) as GenerateImagePayload
+    if (!body?.prompt?.trim()) return json({ error: "Prompt is required" }, 400)
 
-    if (!body?.prompt || !body.prompt.trim()) {
-      return json({ error: "Prompt is required" }, 400)
-    }
-
-    // Respect "no prompt enhancement": pass user prompt as-is
-    const prompt = body.prompt
     const size = sizeFromRatio(body.ratio, body.size)
+    const openaiKey = process.env.OPENAI_API_KEY
+    if (!openaiKey) return json({ error: "OPENAI_API_KEY not set" }, 500)
 
-    const OPENAI_API_KEY = process.env.OPENAI_API_KEY
-    if (!OPENAI_API_KEY) {
-      return json({ error: "OPENAI_API_KEY is not configured" }, 500)
-    }
-
-    // Build payload for OpenAI Responses API using gpt-image-1
-    // Reference: model supports base, reference, and masked edit via `image` and optional `mask`
-    const openaiPayload: Record<string, any> = {
+    const payload: Record<string, any> = {
       model: "gpt-image-1",
-      prompt,
+      prompt: body.prompt, // no server-side enhancement
       size,
     }
-
-    if (body.referenceImageUrl) {
-      openaiPayload.image = body.referenceImageUrl
-    }
-    if (body.referenceImageUrl && body.editMaskUrl) {
-      openaiPayload.mask = body.editMaskUrl
-    }
+    if (body.referenceImageUrl) payload.image = body.referenceImageUrl
+    if (body.referenceImageUrl && body.editMaskUrl) payload.mask = body.editMaskUrl
 
     const res = await fetch("https://api.openai.com/v1/responses", {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${OPENAI_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(openaiPayload),
+      headers: { Authorization: `Bearer ${openaiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
     })
-
     if (!res.ok) {
-      let details: unknown
+      let details: any
       try {
         details = await res.json()
       } catch {
         details = await res.text()
       }
-      return json(
-        {
-          error: "OpenAI image generation failed",
-          status: res.status,
-          details,
-        },
-        res.status
-      )
+      return json({ error: "OpenAI error", status: res.status, details }, res.status)
     }
-
     const data = await res.json()
 
-    // Try to extract an image URL from Responses API output formats
-    // New Responses format (content with type "output_image")
     let imageUrl: string | null = null
-
     try {
-      // gpt-image-1 Responses payload commonly uses:
-      // data.output[0].content = [{ type: "output_image", image_url: "..." }]
       const output = data?.output ?? data?.outputs ?? []
       if (Array.isArray(output) && output.length > 0) {
         const content = output[0]?.content ?? []
@@ -137,51 +93,14 @@ export async function POST(req: Request) {
           : null
         imageUrl = imagePart?.image_url ?? null
       }
-    } catch {
-      // ignore and fall back
-    }
+    } catch {}
+    if (!imageUrl) imageUrl = data?.data?.[0]?.url ?? null
 
-    // Legacy fallback (older image APIs returned { data: [{ url }] })
-    if (!imageUrl) {
-      imageUrl = data?.data?.[0]?.url ?? null
-    }
+    if (!imageUrl) return json({ error: "No image URL in response", data }, 502)
 
-    if (!imageUrl) {
-      return json(
-        {
-          error: "Could not parse image URL from OpenAI response",
-          details: data,
-        },
-        502
-      )
-    }
-
-    // We return revisedPrompt for display only; not used server-side for generation.
-    const ratioLabels: Record<string, string> = {
-      "1:1": "Square (1:1)",
-      "16:9": "Horizontal (16:9)",
-      "9:16": "Vertical (9:16)",
-      "4:3": "Facebook (4:3)",
-      "3:4": "Facebook (3:4)",
-    }
-    const ratioLabel =
-      (body.ratio && ratioLabels[body.ratio]) || (body.ratio ?? "custom")
-
-    const revisedPrompt = [prompt, ratioLabel, body.style].filter(Boolean).join(" | ")
-
-    return json(
-      {
-        success: true,
-        imageUrl,
-        revisedPrompt,
-        size,
-      },
-      200
-    )
-  } catch (err) {
-    const message =
-      err instanceof Error ? err.message : typeof err === "string" ? err : "Unknown error"
-    return json({ error: "Internal Server Error", details: message }, 500)
+    return json({ success: true, imageUrl, size })
+  } catch (e: any) {
+    return json({ error: e?.message ?? "Internal error" }, 500)
   }
 }
 
